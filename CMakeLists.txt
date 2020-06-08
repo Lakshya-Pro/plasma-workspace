@@ -5,7 +5,7 @@ set(PROJECT_VERSION "5.19.80")
 set(PROJECT_VERSION_MAJOR 5)
 
 set(QT_MIN_VERSION "5.14.0")
-set(KF5_MIN_VERSION "5.72.0")
+set(KF5_MIN_VERSION "5.73.0")
 set(INSTALL_SDDM_THEME TRUE)
 find_package(Qt5 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS Widgets Quick QuickWidgets Concurrent Test Network)
 find_package(ECM ${KF5_MIN_VERSION} REQUIRED NO_MODULE)
@@ -24,6 +24,7 @@ include(ECMQtDeclareLoggingCategory)
 include(ECMQueryQmake)
 include(KDEPackageAppTemplates)
 include(KDEClangFormat)
+include(ECMConfiguredInstall)
 
 find_package(KF5 ${KF5_MIN_VERSION} REQUIRED COMPONENTS
                     Plasma DocTools Runner Notifications NotifyConfig Su NewStuff Wallet
@@ -143,6 +144,8 @@ add_definitions(-DQT_NO_URL_CAST_FROM_STRING)
 
 # locate qdbus in the Qt path because not every distro makes a symlink at /usr/bin/qdbus
 query_qmake(QtBinariesDir QT_INSTALL_BINS)
+
+option(PLASMA_SYSTEMD_BOOT "Use systemd units for startup of plasma (WIP)" FALSE)
 
 add_subdirectory(doc)
 add_subdirectory(libkworkspace)

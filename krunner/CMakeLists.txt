@@ -42,4 +42,7 @@ configure_package_config_file(KRunnerAppDBusInterfaceConfig.cmake.in
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/KRunnerAppDBusInterfaceConfig.cmake
     DESTINATION ${CMAKECONFIG_INSTALL_DIR})
 
+ecm_install_configured_files(INPUT plasma-krunner.service.in @ONLY DESTINATION
+        ${SYSTEMD_USER_UNIT_INSTALL_DIR})
+
 add_subdirectory(update)

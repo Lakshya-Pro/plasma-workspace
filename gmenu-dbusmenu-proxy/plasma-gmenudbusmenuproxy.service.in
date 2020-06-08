@@ -1,0 +1,10 @@
+[Unit]
+Description=Proxies GTK DBus menus to a Plasma readable format
+
+[Service]
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/gmenudbusmenuproxy
+Restart=on-failure
+KillMode=process
+Type=simple
+Slice=background.slice
+TimeoutSec=5sec

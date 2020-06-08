@@ -35,6 +35,9 @@
 
 #include "startplasma.h"
 
+#include "../config-workspace.h"
+
+
 QTextStream out(stderr);
 
 void messageBox(const QString &text)
@@ -362,21 +365,8 @@ bool startPlasmaSession(bool wayland)
     // If the session should be locked from the start (locked autologin),
     // lock now and do the rest of the KDE startup underneath the locker.
 
-
-    QStringList plasmaSessionOptions;
-    if (wayland) {
-        plasmaSessionOptions << QStringLiteral("--no-lockscreen");
-    } else {
-        if (desktopLockedAtStart) {
-            plasmaSessionOptions << QStringLiteral("--lockscreen");
-        }
-    }
-
     bool rc = true;
     QEventLoop e;
-
-    QProcess startPlasmaSession;
-    startPlasmaSession.setProcessChannelMode(QProcess::ForwardedChannels);
 
     QDBusServiceWatcher serviceWatcher;
     serviceWatcher.setConnection(QDBusConnection::sessionBus());
@@ -386,15 +376,6 @@ bool startPlasmaSession(bool wayland)
     serviceWatcher.addWatchedService(QStringLiteral("org.kde.ksmserver"));
     serviceWatcher.addWatchedService(QStringLiteral("org.kde.Shutdown"));
     serviceWatcher.setWatchMode(QDBusServiceWatcher::WatchForUnregistration);
-
-    QObject::connect(&startPlasmaSession, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), [&rc, &e](int exitCode, QProcess::ExitStatus) {
-        if (exitCode == 255) {
-            // Startup error
-            messageBox(QStringLiteral("startkde: Could not start ksmserver. Check your installation.\n"));
-            rc = false;
-            e.quit();
-        }
-    });
 
     QObject::connect(&serviceWatcher, &QDBusServiceWatcher::serviceUnregistered, [&]() {
         const QStringList watchedServices = serviceWatcher.watchedServices();
@@ -406,8 +387,48 @@ bool startPlasmaSession(bool wayland)
         }
     });
 
+#ifndef PLASMA_SYSTEMD_BOOT
+    QProcess startPlasmaSession;
+
+    QStringList plasmaSessionOptions;
+    if (wayland) {
+        plasmaSessionOptions << QStringLiteral("--no-lockscreen");
+    } else {
+        if (desktopLockedAtStart) {
+            plasmaSessionOptions << QStringLiteral("--lockscreen");
+        }
+    }
+
+    startPlasmaSession.setProcessChannelMode(QProcess::ForwardedChannels);
+    QObject::connect(&startPlasmaSession, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), [&rc, &e](int exitCode, QProcess::ExitStatus) {
+        if (exitCode == 255) {
+            // Startup error
+            messageBox(QStringLiteral("startkde: Could not start ksmserver. Check your installation.\n"));
+            rc = false;
+            e.quit();
+        }
+    });
+
     startPlasmaSession.start(QStringLiteral(CMAKE_INSTALL_FULL_BINDIR "/plasma_session"), plasmaSessionOptions);
-    e.exec();
+    rc = startPlasmaSession.waitForStarted();
+#else
+
+        const QString platform = wayland ? QStringLiteral("wayland") : QStringLiteral("x11");
+
+        auto msg = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.systemd1"),
+                                                                       QStringLiteral("/org/freedesktop/systemd1"),
+                                                                        QStringLiteral("org.freedesktop.systemd1.Manager"),
+                                                                        QStringLiteral("StartUnit"));
+        msg << QStringLiteral("plasma-workspace@%1.target").arg(platform) << QStringLiteral("fail");
+        auto reply = QDBusConnection::sessionBus().call(msg);
+        if (reply.type() == QDBusMessage::ErrorMessage) {
+            rc = false;
+        }
+#endif
+
+    if (rc) {
+        e.exec();
+    }
     return rc;
 }
 

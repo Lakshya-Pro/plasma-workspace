@@ -155,3 +155,5 @@
 
 /** place where plasma-frameworks things are installed */
 #define PLASMA_RELATIVE_DATA_INSTALL_DIR "@PLASMA_RELATIVE_DATA_INSTALL_DIR@"
+
+#cmakedefine PLASMA_SYSTEMD_BOOT 1

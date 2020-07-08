@@ -20,7 +20,8 @@
 #ifndef SYSTEMTRAYMODEL_H
 #define SYSTEMTRAYMODEL_H
 
-#include <QStandardItemModel>
+#include <QAbstractListModel>
+#include <QList>
 
 #include <KItemModels/KConcatenateRowsProxyModel>
 #include <Plasma/DataEngineConsumer>
@@ -30,7 +31,7 @@ namespace Plasma {
     class Applet;
 }
 
-class BaseModel: public QStandardItemModel
+class BaseModel: public QAbstractListModel
 {
     Q_OBJECT
 public:
@@ -51,15 +52,10 @@ public:
 public slots:
     void onConfigurationChanged(const KConfigGroup &config);
 
-private slots:
-    void onRowsInserted(const QModelIndex &parent, int first, int last);
-    void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles);
+protected:
+    Plasma::Types::ItemStatus calculateEffectiveStatus(bool canRender, Plasma::Types::ItemStatus status, QString itemId) const;
 
 private:
-    void updateEffectiveStatus(QStandardItem *dataItem);
-    Plasma::Types::ItemStatus calculateEffectiveStatus(QStandardItem *dataItem);
-    Plasma::Types::ItemStatus readStatus(QStandardItem *dataItem) const;
-
     bool m_showAllItems;
     QStringList m_shownItems;
     QStringList m_hiddenItems;
@@ -76,11 +72,20 @@ public:
 
     explicit PlasmoidModel(QObject *parent = nullptr);
 
+    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QHash<int, QByteArray> roleNames() const override;
 
 public slots:
     void addApplet(Plasma::Applet *applet);
     void removeApplet(Plasma::Applet *applet);
+
+private:
+    void appendRow(const KPluginMetaData &pluginMetaData);
+    int indexOfPluginId(const QString &pluginId) const;
+
+    QList<KPluginMetaData> m_plugins;
+    QHash<int, Plasma::Applet*> m_applets;
 };
 
 class StatusNotifierModel : public BaseModel, public Plasma::DataEngineConsumer {
@@ -107,6 +112,8 @@ public:
 
     StatusNotifierModel(QObject* parent);
 
+    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QHash<int, QByteArray> roleNames() const override;
 
     Plasma::Service *serviceForSource(const QString &source);
@@ -117,8 +124,6 @@ public slots:
     void dataUpdated(const QString &sourceName, const Plasma::DataEngine::Data &data);
 
 private:
-    void updateItemData(QStandardItem *dataItem, const Plasma::DataEngine::Data &data, const Role role);
-
     Plasma::DataEngine *m_dataEngine = nullptr;
     QStringList m_sources;
     QHash<QString, Plasma::Service *> m_services;

@@ -37,6 +37,8 @@
 #include <QDBusServiceWatcher>
 
 #include <KConfigGroup>
+#include <KDesktopFile>
+#include <KDirWatch>
 #include <KService>
 #include <KSharedConfig>
 #include <KUser>
@@ -46,18 +48,21 @@ using namespace NotificationManager;
 ServerPrivate::ServerPrivate(QObject *parent)
     : QObject(parent)
     , m_inhibitionWatcher(new QDBusServiceWatcher(this))
-    , m_notificationWatchers (new QDBusServiceWatcher(this))
+    , m_dirWatcher(new KDirWatch(this))
 {
     m_inhibitionWatcher->setConnection(QDBusConnection::sessionBus());
     m_inhibitionWatcher->setWatchMode(QDBusServiceWatcher::WatchForUnregistration);
     connect(m_inhibitionWatcher, &QDBusServiceWatcher::serviceUnregistered, this, &ServerPrivate::onInhibitionServiceUnregistered);
 
-    m_notificationWatchers->setConnection(QDBusConnection::sessionBus());
-    m_notificationWatchers->setWatchMode(QDBusServiceWatcher::WatchForUnregistration);
-    connect(m_notificationWatchers, &QDBusServiceWatcher::serviceUnregistered, [=](const QString &service) {
-        //m_notificationWatchers->removeWatchedService(service);
-        qCDebug(NOTIFICATIONMANAGER) << "Service unregistered";
-    });
+    // we start watching the locations where watcher config is
+    const QStringList folders = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QStringLiteral("plasma/notificationswatcher"), QStandardPaths::LocateDirectory);
+    foreach (const QString &folder, folders) {
+        m_dirWatcher->addDir(folder, KDirWatch::WatchFiles);
+    }
+    connect(m_dirWatcher, &KDirWatch::created, this, &ServerPrivate::updateWatcher);
+    connect(m_dirWatcher, &KDirWatch::deleted, this, &ServerPrivate::updateWatcher);
+    connect(m_dirWatcher, &KDirWatch::dirty, this, &ServerPrivate::updateWatcher);
+    updateWatcher();
 }
 
 ServerPrivate::~ServerPrivate() = default;
@@ -235,9 +240,9 @@ uint ServerPrivate::Notify(const QString &app_name, uint replaces_id, const QStr
 
     // currently we dispatch all notification, this is ugly
     // TODO: come up with proper authentication/user selection
-    for (const QString &service : m_notificationWatchers->watchedServices()) {
+    for (const auto &watcher : m_notificationWatcherList) {
         QDBusMessage msg = QDBusMessage::createMethodCall(
-            service,
+            watcher.dbusService,
             QStringLiteral("/NotificationWatcher"),
             QStringLiteral("org.kde.NotificationWatcher"),
             QStringLiteral("Notify")
@@ -263,9 +268,9 @@ uint ServerPrivate::Notify(const QString &app_name, uint replaces_id, const QStr
 
 void ServerPrivate::CloseNotification(uint id)
 {
-    for (const QString &service : m_notificationWatchers->watchedServices()) {
+    for (const auto &watcher : m_notificationWatcherList) {
         QDBusMessage msg = QDBusMessage::createMethodCall(
-            service,
+            watcher.dbusService,
             QStringLiteral("/NotificationWatcher"),
             QStringLiteral("org.kde.NotificationWatcher"),
             QStringLiteral("CloseNotification")
@@ -533,4 +538,33 @@ void ServerPrivate::clearExternalInhibitions()
 void ServerPrivate::InvokeAction(uint id, const QString& actionKey)
 {
     ActionInvoked(id, actionKey);
+}
+
+void ServerPrivate::updateWatcher(const QString& path)
+{
+    Q_UNUSED(path)
+
+    QStringList files;
+    // first clear out the list of watchers
+    m_notificationWatcherList.clear();
+
+    // list all desktop files
+    const QStringList folders = QStandardPaths::locateAll(QStandardPaths::GenericDataLocation, QStringLiteral("plasma/notificationswatcher"), QStandardPaths::LocateDirectory);
+    for(const QString& folder: folders) {
+        QDirIterator it(folder, QStringList() << QStringLiteral("*.desktop"));
+        while(it.hasNext()) {
+            files.prepend(it.next());
+        }
+    }
+
+    // process them
+    for(const QString& path : files) {
+        KDesktopFile cfg(path);
+        const QString& service = cfg.desktopGroup().readEntry("X-KDE-Notifier-DBus-Service", QStringLiteral());
+        const QString& id = cfg.desktopGroup().readEntry("Id", QStringLiteral());
+        const QString& name = cfg.desktopGroup().readEntry("Name", QStringLiteral());
+        if (!service.isEmpty() && !id.isEmpty() && !name.isEmpty()) {
+            m_notificationWatcherList << NotificationWatcher{path, id, name, service};
+        }
+    }
 }
